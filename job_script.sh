@@ -1,25 +1,18 @@
 #!/bin/bash
-#SBATCH --mem=32G
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=8
-#SBATCH --time=15:0:0    
-#SBATCH --mail-user=<youremail@gmail.com>
-#SBATCH --mail-type=ALL
+#SBATCH --account=def-qizhen       # Set the account
+#SBATCH --partition=Narval         # Specify the partition/cluster name
+#SBATCH --gres=gpu:A100:1          # Request 1 A100 GPU
+#SBATCH --mem=40G                  # Request 40G of memory
+#SBATCH --nodes=1                  # Request 1 node
+#SBATCH --ntasks-per-node=8        # Set the number of tasks per node
+#SBATCH --time=15:0:0              # Set the time limit
+#SBATCH --mail-user=<sophiesoap.xu@mail.utoronto.ca>  # Set the email for notifications
+#SBATCH --mail-type=ALL            # Set the email notifications type
+#SBATCH --output=slurm_fedgpt.out      # Customize the output file name
+#SBATCH --error=slurm_fedgpt.err       # Separate standard error to a different file
+#SBATCH --export=ALL,DISABLE_DCGM=1  # Disable DCGM
 
-# Convert Windows line endings of all .sh files
-find . -name "*.sh" -exec dos2unix {} \;
+# Run model
+branch=main
+python ${branch}.py --global_model 'chanvinlo/alpaca-native' --data_path "./data" ...
 
-# Preprocess data
-sudo bash preprocess.sh -s niid --sf 0.001 -k 0 -t sample -tf 0.98
-
-# Create required directory structure to store data
-mkdir -p data_leaf/{training/user,testing/user}
-
-# Load data for each client
-python load_data.py
-num_clients=10
-diff_quantity=0
-python client_data_allocation $num_clients $diff_quantity     # remember to change path to "data_leaf/training/shakespeare_instruction_response_pairs_all.json" if cloning project
-
-# Run Flower
-python flower.py --global_model 'chavinlo/alpaca-native' --data_path  "./data" --output_dir  './lora-shepherd-7b/' --num_communication_rounds 10 --num_clients  10 --train_on_inputs --group_by_length
