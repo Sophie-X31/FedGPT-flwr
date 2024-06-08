@@ -14,5 +14,10 @@
 
 # Run model
 branch=main
-python ${branch}.py --global_model 'chanvinlo/alpaca-native' --data_path "./data" ...
-
+python ${branch}.py --global_model 'chavinlo/alpaca-native'\
+    --data_path  "./data" \
+    --output_dir  './lora-shepherd-7b/'\
+    --num_communication_rounds 10 \
+    --num_clients  10 \
+    --train_on_inputs \
+    --group_by_length
