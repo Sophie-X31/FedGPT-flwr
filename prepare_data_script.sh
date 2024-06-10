@@ -19,4 +19,7 @@ if [ ! -d "data_leaf" ]; then
     num_clients=10
     diff_quantity=0
     python client_data_allocation.py $num_clients $diff_quantity
+
+    # Create directory to store results
+    mkdir -p ./lora-shepherd-7b
 fi
