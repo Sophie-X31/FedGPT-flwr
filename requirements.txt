@@ -5,12 +5,14 @@ bitsandbytes
 black
 black[jupyter]
 datasets
-fire #p
+fire
 git+https://github.com/huggingface/peft.git
 git+https://github.com/huggingface/transformers.git
 sentencepiece
-gradio #p
 tensorboard
 flwr
 torch
 transformers
+gradio
+matplotlib
+PySocks
