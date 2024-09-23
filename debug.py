@@ -1,15 +1,16 @@
 import os
 import json
 from collections import OrderedDict
-from typing import List
+from typing import List, Dict, Any, Union, Tuple
 import datasets
 from datasets import load_dataset
 from tqdm import tqdm
 import copy
 import fire
 import torch
+import numpy as np
 import transformers
-from transformers import LlamaTokenizer, LlamaForCausalLM
+from transformers import LlamaTokenizer, LlamaForCausalLM, TrainerCallback
 from peft import (
     LoraConfig,
     get_peft_model,
@@ -17,15 +18,17 @@ from peft import (
     get_peft_model_state_dict,
     set_peft_model_state_dict,
 )
-from fed_utils import FedAvg, client_selection
+from fed_utils.model_aggregation import FedAvg
+from fed_utils.client_participation_scheduling import client_selection
 from utils.prompter import Prompter
 from torch.utils.tensorboard import SummaryWriter
-writer = SummaryWriter(f'runs/Debug')
+writer = SummaryWriter(f'runs/Debug2')
 
 
-# Set Device
+# Intialize Set Up
 device = "cuda" if torch.cuda.is_available() else "cpu"
 datasets.utils.logging.set_verbosity_error()
+Scalar = Union[bool, bytes, float, int, str]
 
 
 class GeneralClient:
@@ -123,16 +126,40 @@ class GeneralClient:
         return self.model, local_dataset_len_dict, previously_selected_clients_set, last_client_id
 
     # Mimic Flower Client
-    def get_parameters(self, config):
+    class LossCaptureCallback(TrainerCallback):
+        def __init__(self):
+            super().__init__()
+            self.losses = []
+
+        def on_log(self, args, state, control, logs=None, **kwargs):
+            if logs is not None and 'loss' in logs:
+                self.losses.append(logs['loss'])
+
+    def get_parameters(self, config: Dict[str, Scalar]) -> List[np.ndarray]:
         new_adapter_weight = self.model.state_dict()
-        return new_adapter_weight
+        parameters = [v.cpu().numpy() for v in new_adapter_weight.values()]
+        return parameters
     
-    def fit(self, parameters, config):
-        self.build_local_trainer()
-        self.initiate_local_training()
-        self.local_trainer.train()
-        num_examples = len(self.local_train_dataset)
-        return self.get_parameters(config), num_examples, {}
+    def fit(self, parameters: List[np.ndarray], config: Dict[str, Scalar]) -> Tuple[List[np.ndarray], int, Dict[str, Scalar]]:
+        try:
+            self.build_local_trainer()
+            self.initiate_local_training()
+
+            loss_capture_callback = self.LossCaptureCallback()
+            self.local_trainer.add_callback(loss_capture_callback)
+            self.local_trainer.train()
+
+            # Debugging prints
+            parameters = self.get_parameters({})
+            print("Parameters:", parameters)
+            print("Type of Parameters:", type(parameters))
+
+            loss = {"Loss": loss_capture_callback.losses[-1]}
+            print("Loss:", loss)
+            print("Type of Loss:", type(loss))
+            return parameters, len(self.local_train_dataset), loss
+        except Exception as e:
+            print(f"Error occurred: {type(e).__name__}, {e}")
     
 
 def fl_finetune(
@@ -142,9 +169,9 @@ def fl_finetune(
         output_dir: str = './lora-shepherd-debug/',
         # FL hyperparamas
         client_selection_strategy: str = 'random',
-        client_selection_frac: float = 0.1,
-        num_communication_rounds: int = 10,
-        num_clients: int = 10, 
+        client_selection_frac: float = 0.2, # 0.1
+        num_communication_rounds: int = 2, # 10
+        num_clients: int = 5, # 10 
         # Local training hyperparams
         local_batch_size: int = 64,  
         local_micro_batch_size: int = 8,
@@ -193,8 +220,8 @@ def fl_finetune(
     
     # Check if the model & data path exists
     assert global_model, "Please specify a --global_model, e.g. --global_modell='decapoda-research/llama-7b-hf'"
-    data_path = os.path.join(data_path, str(num_clients))
-    # data_path = os.path.join(data_path, "10")
+    # data_path = os.path.join(data_path, str(num_clients))
+    data_path = os.path.join(data_path, "10")
     assert os.path.exists(data_path), "Please generate the data files for each client"
 
     # Set up parallel training
